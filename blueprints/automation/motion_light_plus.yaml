@@ -1,0 +1,171 @@
+blueprint:
+  name: Motion light (plus)
+  description: >
+    Lights on with motion; off (or dimmed when dark) after motion stops.
+    Optionally only when dark (around sunset/sunrise) or between set times.
+    Brightness / colour temperature of 0 = leave the light's last setting.
+  domain: automation
+  source_url: https://github.com/drr0586/ha_blueprints/blob/main/blueprints/automation/motion_light_plus.yaml
+  input:
+    motion_entity:
+      name: Motion sensor
+      selector:
+        entity:
+          filter:
+            - domain: binary_sensor
+    lights:
+      name: Lights
+      selector:
+        target:
+          entity:
+            - domain: light
+    brightness:
+      name: Brightness (0 = leave unchanged)
+      default: 0
+      selector:
+        number: { min: 0, max: 100, unit_of_measurement: "%" }
+    color_temp:
+      name: Colour temperature (0 = leave unchanged)
+      default: 0
+      selector:
+        number: { min: 0, max: 6500, step: 1, mode: box, unit_of_measurement: K }
+    no_motion_wait:
+      name: Wait after motion stops
+      default: { hours: 0, minutes: 2, seconds: 0 }
+      selector:
+        duration: {}
+    when:
+      name: Only run
+      default: always
+      selector:
+        select:
+          options:
+            - { label: "Always", value: "always" }
+            - { label: "When dark (around sunset/sunrise)", value: "dark" }
+            - { label: "Between set times", value: "time" }
+    dark_margin:
+      name: "Dark: minutes before sunset / after sunrise"
+      default: 60
+      selector:
+        number: { min: 0, max: 180, unit_of_measurement: min }
+    time_after:
+      name: "Set times: from"
+      default: "16:00:00"
+      selector: { time: {} }
+    time_before:
+      name: "Set times: until"
+      default: "23:00:00"
+      selector: { time: {} }
+    after_motion:
+      name: When motion stops
+      default: "off"
+      selector:
+        select:
+          options:
+            - { label: "Turn off", value: "off" }
+            - { label: "Dim when dark, otherwise turn off", value: "dim_when_dark" }
+    dim_brightness:
+      name: Dim brightness
+      default: 30
+      selector:
+        number: { min: 1, max: 100, unit_of_measurement: "%" }
+    dim_color:
+      name: Dim colour
+      default: [217, 80, 0]
+      selector: { color_rgb: {} }
+    transition:
+      name: Off/dim transition
+      default: 0
+      selector:
+        number: { min: 0, max: 60, unit_of_measurement: s }
+
+mode: restart
+max_exceeded: silent
+
+variables:
+  when_mode: !input when
+  margin: !input dark_margin
+  after_mode: !input after_motion
+  br: !input brightness
+  ct: !input color_temp
+  is_dark: >
+    {% set m = timedelta(minutes=margin | int) %}
+    {% set rise = as_datetime(state_attr('sun.sun', 'next_rising')) %}
+    {% set sset = as_datetime(state_attr('sun.sun', 'next_setting')) %}
+    {{ is_state('sun.sun', 'below_horizon') or now() >= sset - m
+       or (rise - now()) > timedelta(hours=24) - m }}
+
+triggers:
+  - trigger: state
+    entity_id: !input motion_entity
+    from: "off"
+    to: "on"
+
+conditions:
+  - condition: or
+    conditions:
+      - "{{ when_mode == 'always' }}"
+      - "{{ when_mode == 'dark' and is_dark }}"
+      - condition: and
+        conditions:
+          - "{{ when_mode == 'time' }}"
+          - condition: time
+            after: !input time_after
+            before: !input time_before
+
+actions:
+  - alias: Turn the lights on
+    choose:
+      - conditions: "{{ br | int > 0 and ct | int > 0 }}"
+        sequence:
+          - action: light.turn_on
+            target: !input lights
+            data:
+              brightness_pct: "{{ br | int }}"
+              color_temp_kelvin: "{{ ct | int }}"
+      - conditions: "{{ br | int > 0 }}"
+        sequence:
+          - action: light.turn_on
+            target: !input lights
+            data:
+              brightness_pct: "{{ br | int }}"
+      - conditions: "{{ ct | int > 0 }}"
+        sequence:
+          - action: light.turn_on
+            target: !input lights
+            data:
+              color_temp_kelvin: "{{ ct | int }}"
+    default:
+      - action: light.turn_on
+        target: !input lights
+
+  - alias: Wait for motion to stop
+    wait_for_trigger:
+      - trigger: state
+        entity_id: !input motion_entity
+        from: "on"
+        to: "off"
+  - delay: !input no_motion_wait
+
+  - variables:
+      dark_now: >
+        {% set m = timedelta(minutes=margin | int) %}
+        {% set rise = as_datetime(state_attr('sun.sun', 'next_rising')) %}
+        {% set sset = as_datetime(state_attr('sun.sun', 'next_setting')) %}
+        {{ is_state('sun.sun', 'below_horizon') or now() >= sset - m
+           or (rise - now()) > timedelta(hours=24) - m }}
+  - alias: Turn off (or dim)
+    choose:
+      - conditions: "{{ after_mode == 'dim_when_dark' and dark_now }}"
+        sequence:
+          - action: light.turn_on
+            target: !input lights
+            data:
+              brightness_pct: !input dim_brightness
+              rgb_color: !input dim_color
+              transition: !input transition
+    default:
+      - action: light.turn_off
+        target: !input lights
+        data:
+          transition: !input transition
