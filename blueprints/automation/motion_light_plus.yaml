@@ -1,171 +1,317 @@
 blueprint:
-  name: Motion light (plus)
+  name: Motion Light Plus
   description: >
-    Lights on with motion; off (or dimmed when dark) after motion stops.
-    Optionally only when dark (around sunset/sunrise) or between set times.
-    Brightness / colour temperature of 0 = leave the light's last setting.
+    Turn lights on when motion or occupancy is detected, optionally only
+    during certain times or between sunset and sunrise. When all sensors have
+    cleared and a delay has passed, either turn the lights off or change them
+    to a different brightness / colour / temperature.
   domain: automation
   source_url: https://github.com/drr0586/ha_blueprints/blob/main/blueprints/automation/motion_light_plus.yaml
+  homeassistant:
+    min_version: 2024.6.0
   input:
-    motion_entity:
-      name: Motion sensor
-      selector:
-        entity:
-          filter:
-            - domain: binary_sensor
-    lights:
-      name: Lights
-      selector:
-        target:
-          entity:
-            - domain: light
-    brightness:
-      name: Brightness (0 = leave unchanged)
-      default: 0
-      selector:
-        number: { min: 0, max: 100, unit_of_measurement: "%" }
-    color_temp:
-      name: Colour temperature (0 = leave unchanged)
-      default: 0
-      selector:
-        number: { min: 0, max: 6500, step: 1, mode: box, unit_of_measurement: K }
-    no_motion_wait:
-      name: Wait after motion stops
-      default: { hours: 0, minutes: 2, seconds: 0 }
-      selector:
-        duration: {}
-    when:
-      name: Only run
-      default: always
-      selector:
-        select:
-          options:
-            - { label: "Always", value: "always" }
-            - { label: "When dark (around sunset/sunrise)", value: "dark" }
-            - { label: "Between set times", value: "time" }
-    dark_margin:
-      name: "Dark: minutes before sunset / after sunrise"
-      default: 60
-      selector:
-        number: { min: 0, max: 180, unit_of_measurement: min }
-    time_after:
-      name: "Set times: from"
-      default: "16:00:00"
-      selector: { time: {} }
-    time_before:
-      name: "Set times: until"
-      default: "23:00:00"
-      selector: { time: {} }
-    after_motion:
-      name: When motion stops
-      default: "off"
-      selector:
-        select:
-          options:
-            - { label: "Turn off", value: "off" }
-            - { label: "Dim when dark, otherwise turn off", value: "dim_when_dark" }
-    dim_brightness:
-      name: Dim brightness
-      default: 30
-      selector:
-        number: { min: 1, max: 100, unit_of_measurement: "%" }
-    dim_color:
-      name: Dim colour
-      default: [217, 80, 0]
-      selector: { color_rgb: {} }
-    transition:
-      name: Off/dim transition
-      default: 0
-      selector:
-        number: { min: 0, max: 60, unit_of_measurement: s }
+    trigger_section:
+      name: Trigger
+      icon: mdi:motion-sensor
+      input:
+        motion_sensors:
+          name: Motion / occupancy sensor(s)
+          description: Any of these turning on starts the light. The lights are only dimmed/turned off once all of them are off.
+          selector:
+            entity:
+              multiple: true
+              domain: binary_sensor
+              device_class:
+                - motion
+                - occupancy
+                - presence
+    condition_section:
+      name: Conditions
+      icon: mdi:clock-outline
+      collapsed: true
+      input:
+        condition_mode:
+          name: Run when
+          description: >
+            Always = any time. Between times = use the time window below.
+            Sunset to sunrise = use the sun offsets below.
+          default: always
+          selector:
+            select:
+              options:
+                - label: Always
+                  value: always
+                - label: Between times
+                  value: time
+                - label: Between sunset and sunrise
+                  value: sun
+        time_after:
+          name: Start time
+          description: Used when "Between times" is selected.
+          default: "18:00:00"
+          selector:
+            time:
+        time_before:
+          name: End time
+          description: Used when "Between times" is selected. May be earlier than the start time to span midnight.
+          default: "06:00:00"
+          selector:
+            time:
+        sunset_offset:
+          name: Sunset offset
+          description: >
+            Used when "Between sunset and sunrise" is selected. Format HH:MM:SS.
+            Use a minus sign to start before sunset (e.g. -00:30:00), a positive
+            value to start after.
+          default: "00:00:00"
+          selector:
+            text:
+        sunrise_offset:
+          name: Sunrise offset
+          description: >
+            Used when "Between sunset and sunrise" is selected. Format HH:MM:SS.
+            Use a minus sign to stop before sunrise (e.g. -00:30:00), a positive
+            value to stop after.
+          default: "00:00:00"
+          selector:
+            text:
+    on_section:
+      name: When motion detected
+      icon: mdi:lightbulb-on
+      input:
+        lights:
+          name: Light(s)
+          selector:
+            target:
+              entity:
+                domain: light
+        on_brightness:
+          name: Brightness
+          default: 100
+          selector:
+            number:
+              min: 1
+              max: 100
+              unit_of_measurement: "%"
+              mode: slider
+        on_color_mode:
+          name: Colour mode
+          description: Leave as "Don't change" to keep whatever colour the light already has.
+          default: none
+          selector:
+            select:
+              options:
+                - label: Don't change
+                  value: none
+                - label: Colour temperature
+                  value: color_temp
+                - label: RGB colour
+                  value: rgb
+        on_color_temp:
+          name: Colour temperature
+          description: Used when colour mode is "Colour temperature".
+          default: 3000
+          selector:
+            number:
+              min: 1500
+              max: 6500
+              step: 50
+              unit_of_measurement: K
+              mode: slider
+        on_rgb:
+          name: RGB colour
+          description: Used when colour mode is "RGB colour".
+          default: [255, 200, 100]
+          selector:
+            color_rgb:
+        on_transition:
+          name: Fade in duration
+          default: 1
+          selector:
+            number:
+              min: 0
+              max: 300
+              unit_of_measurement: s
+              mode: box
+    off_section:
+      name: When motion clears
+      icon: mdi:lightbulb-off
+      input:
+        off_delay:
+          name: Wait time after motion stops
+          default:
+            hours: 0
+            minutes: 5
+            seconds: 0
+          selector:
+            duration:
+        off_action:
+          name: Then
+          default: turn_off
+          selector:
+            select:
+              options:
+                - label: Turn off
+                  value: turn_off
+                - label: Change light state
+                  value: change
+        off_transition:
+          name: Transition duration
+          description: Fade time for turning off or changing state.
+          default: 5
+          selector:
+            number:
+              min: 0
+              max: 300
+              unit_of_measurement: s
+              mode: box
+        change_brightness:
+          name: New brightness
+          description: Used when "Change light state" is selected.
+          default: 20
+          selector:
+            number:
+              min: 1
+              max: 100
+              unit_of_measurement: "%"
+              mode: slider
+        change_color_mode:
+          name: New colour mode
+          description: Used when "Change light state" is selected.
+          default: none
+          selector:
+            select:
+              options:
+                - label: Don't change
+                  value: none
+                - label: Colour temperature
+                  value: color_temp
+                - label: RGB colour
+                  value: rgb
+        change_color_temp:
+          name: New colour temperature
+          default: 2200
+          selector:
+            number:
+              min: 1500
+              max: 6500
+              step: 50
+              unit_of_measurement: K
+              mode: slider
+        change_rgb:
+          name: New RGB colour
+          default: [255, 120, 40]
+          selector:
+            color_rgb:
 
 mode: restart
 max_exceeded: silent
 
 variables:
-  when_mode: !input when
-  margin: !input dark_margin
-  after_mode: !input after_motion
-  br: !input brightness
-  ct: !input color_temp
-  is_dark: >
-    {% set m = timedelta(minutes=margin | int) %}
-    {% set rise = as_datetime(state_attr('sun.sun', 'next_rising')) %}
-    {% set sset = as_datetime(state_attr('sun.sun', 'next_setting')) %}
-    {{ is_state('sun.sun', 'below_horizon') or now() >= sset - m
-       or (rise - now()) > timedelta(hours=24) - m }}
+  condition_mode: !input condition_mode
+  motion_sensors: !input motion_sensors
+  on_color_mode: !input on_color_mode
+  off_action: !input off_action
+  change_color_mode: !input change_color_mode
 
-triggers:
-  - trigger: state
-    entity_id: !input motion_entity
-    from: "off"
+trigger:
+  - platform: state
+    entity_id: !input motion_sensors
     to: "on"
 
-conditions:
+condition:
   - condition: or
     conditions:
-      - "{{ when_mode == 'always' }}"
-      - "{{ when_mode == 'dark' and is_dark }}"
+      - condition: template
+        value_template: "{{ condition_mode == 'always' }}"
       - condition: and
         conditions:
-          - "{{ when_mode == 'time' }}"
+          - condition: template
+            value_template: "{{ condition_mode == 'time' }}"
           - condition: time
             after: !input time_after
             before: !input time_before
+      - condition: and
+        conditions:
+          - condition: template
+            value_template: "{{ condition_mode == 'sun' }}"
+          - condition: or
+            conditions:
+              - condition: sun
+                after: sunset
+                after_offset: !input sunset_offset
+              - condition: sun
+                before: sunrise
+                before_offset: !input sunrise_offset
 
-actions:
-  - alias: Turn the lights on
-    choose:
-      - conditions: "{{ br | int > 0 and ct | int > 0 }}"
+action:
+  # Turn on
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ on_color_mode == 'color_temp' }}"
         sequence:
-          - action: light.turn_on
+          - service: light.turn_on
             target: !input lights
             data:
-              brightness_pct: "{{ br | int }}"
-              color_temp_kelvin: "{{ ct | int }}"
-      - conditions: "{{ br | int > 0 }}"
+              brightness_pct: !input on_brightness
+              color_temp_kelvin: !input on_color_temp
+              transition: !input on_transition
+      - conditions:
+          - condition: template
+            value_template: "{{ on_color_mode == 'rgb' }}"
         sequence:
-          - action: light.turn_on
+          - service: light.turn_on
             target: !input lights
             data:
-              brightness_pct: "{{ br | int }}"
-      - conditions: "{{ ct | int > 0 }}"
-        sequence:
-          - action: light.turn_on
-            target: !input lights
-            data:
-              color_temp_kelvin: "{{ ct | int }}"
+              brightness_pct: !input on_brightness
+              rgb_color: !input on_rgb
+              transition: !input on_transition
     default:
-      - action: light.turn_on
-        target: !input lights
-
-  - alias: Wait for motion to stop
-    wait_for_trigger:
-      - trigger: state
-        entity_id: !input motion_entity
-        from: "on"
-        to: "off"
-  - delay: !input no_motion_wait
-
-  - variables:
-      dark_now: >
-        {% set m = timedelta(minutes=margin | int) %}
-        {% set rise = as_datetime(state_attr('sun.sun', 'next_rising')) %}
-        {% set sset = as_datetime(state_attr('sun.sun', 'next_setting')) %}
-        {{ is_state('sun.sun', 'below_horizon') or now() >= sset - m
-           or (rise - now()) > timedelta(hours=24) - m }}
-  - alias: Turn off (or dim)
-    choose:
-      - conditions: "{{ after_mode == 'dim_when_dark' and dark_now }}"
-        sequence:
-          - action: light.turn_on
-            target: !input lights
-            data:
-              brightness_pct: !input dim_brightness
-              rgb_color: !input dim_color
-              transition: !input transition
-    default:
-      - action: light.turn_off
+      - service: light.turn_on
         target: !input lights
         data:
-          transition: !input transition
+          brightness_pct: !input on_brightness
+          transition: !input on_transition
+
+  # Wait until every sensor is clear (restart mode cancels this if motion returns)
+  - wait_template: >
+      {{ expand(motion_sensors) | selectattr('state', 'eq', 'on') | list | length == 0 }}
+  - delay: !input off_delay
+
+  # Turn off or change state
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ off_action == 'turn_off' }}"
+        sequence:
+          - service: light.turn_off
+            target: !input lights
+            data:
+              transition: !input off_transition
+      - conditions:
+          - condition: template
+            value_template: "{{ change_color_mode == 'color_temp' }}"
+        sequence:
+          - service: light.turn_on
+            target: !input lights
+            data:
+              brightness_pct: !input change_brightness
+              color_temp_kelvin: !input change_color_temp
+              transition: !input off_transition
+      - conditions:
+          - condition: template
+            value_template: "{{ change_color_mode == 'rgb' }}"
+        sequence:
+          - service: light.turn_on
+            target: !input lights
+            data:
+              brightness_pct: !input change_brightness
+              rgb_color: !input change_rgb
+              transition: !input off_transition
+    default:
+      - service: light.turn_on
+        target: !input lights
+        data:
+          brightness_pct: !input change_brightness
+          transition: !input off_transition
