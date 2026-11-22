@@ -1,0 +1,89 @@
+blueprint:
+  name: Dual button actions (single / double / long)
+  description: >
+    Run different actions for single, double and long presses of each button on
+    a two-button remote (e.g. IKEA BILRESA), where each button is exposed as its
+    own event entity. One automation instead of one per button.
+  domain: automation
+  source_url: https://github.com/drr0586/ha_blueprints/blob/main/blueprints/automation/dual_button_actions.yaml
+  homeassistant:
+    min_version: 2024.10.0
+  input:
+    button_1_section:
+      name: Button 1
+      icon: mdi:numeric-1-box-outline
+      input:
+        button_1:
+          name: Button 1 (event entity)
+          selector:
+            entity:
+              filter:
+                - domain: event
+        button_1_single:
+          name: Single press
+          default: []
+          selector: { action: {} }
+        button_1_double:
+          name: Double press
+          default: []
+          selector: { action: {} }
+        button_1_long:
+          name: Long press
+          default: []
+          selector: { action: {} }
+    button_2_section:
+      name: Button 2
+      icon: mdi:numeric-2-box-outline
+      input:
+        button_2:
+          name: Button 2 (event entity)
+          selector:
+            entity:
+              filter:
+                - domain: event
+        button_2_single:
+          name: Single press
+          default: []
+          selector: { action: {} }
+        button_2_double:
+          name: Double press
+          default: []
+          selector: { action: {} }
+        button_2_long:
+          name: Long press
+          default: []
+          selector: { action: {} }
+
+mode: queued
+max: 10
+
+triggers:
+  - trigger: state
+    entity_id:
+      - !input button_1
+      - !input button_2
+    not_from: unavailable
+    not_to: unavailable
+
+conditions:
+  - "{{ trigger.from_state is not none }}"
+
+variables:
+  button_1: !input button_1
+  button_2: !input button_2
+  press: "{{ trigger.to_state.attributes.event_type }}"
+
+actions:
+  - choose:
+      - conditions: "{{ trigger.entity_id == button_1 and press == 'multi_press_1' }}"
+        sequence: !input button_1_single
+      - conditions: "{{ trigger.entity_id == button_1 and press == 'multi_press_2' }}"
+        sequence: !input button_1_double
+      - conditions: "{{ trigger.entity_id == button_1 and press == 'long_press' }}"
+        sequence: !input button_1_long
+      - conditions: "{{ trigger.entity_id == button_2 and press == 'multi_press_1' }}"
+        sequence: !input button_2_single
+      - conditions: "{{ trigger.entity_id == button_2 and press == 'multi_press_2' }}"
+        sequence: !input button_2_double
+      - conditions: "{{ trigger.entity_id == button_2 and press == 'long_press' }}"
+        sequence: !input button_2_long
